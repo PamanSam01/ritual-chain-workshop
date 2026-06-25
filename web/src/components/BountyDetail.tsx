@@ -1,7 +1,7 @@
 "use client";
 
 import type { Bounty } from "@/lib/bounty";
-import { getBountyStatus, STATUS_META } from "@/lib/bounty";
+import { getBountyStatus, STATUS_META, normalizeTs } from "@/lib/bounty";
 import { useNow } from "@/hooks/useNow";
 import { shortenAddress, formatReward, formatTimestamp, formatRelative } from "@/lib/format";
 import { Card, CardHeader, CardBody, Badge, Stat } from "@/components/ui";
@@ -49,12 +49,23 @@ export function BountyDetail({
           <Stat label="Reward" value={formatReward(bounty.reward)} />
           <Stat label="Submissions" value={bounty.submissionCount.toString()} />
           <Stat
-            label="Deadline"
+            label="Commit Deadline"
             value={
               <span>
-                {formatTimestamp(bounty.deadline)}
+                {formatTimestamp(normalizeTs(bounty.submissionDeadline))}
                 <span className="ml-1 text-xs text-zinc-500">
-                  ({formatRelative(bounty.deadline)})
+                  ({formatRelative(normalizeTs(bounty.submissionDeadline))})
+                </span>
+              </span>
+            }
+          />
+          <Stat
+            label="Reveal Deadline"
+            value={
+              <span>
+                {formatTimestamp(normalizeTs(bounty.revealDeadline))}
+                <span className="ml-1 text-xs text-zinc-500">
+                  ({formatRelative(normalizeTs(bounty.revealDeadline))})
                 </span>
               </span>
             }

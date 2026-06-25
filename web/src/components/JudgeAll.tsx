@@ -7,8 +7,10 @@ import { contractAddress, executorAddress } from "@/config/contract";
 import { ritualChain } from "@/config/wagmi";
 import type { Bounty } from "@/lib/bounty";
 import { buildJudgeAllLlmInput, type JudgeSubmission } from "@/lib/ritualLlm";
+import { normalizeTs } from "@/lib/bounty";
 import { useWriteTx } from "@/hooks/useWriteTx";
 import { useRitualWalletStatus } from "@/hooks/useRitualWalletStatus";
+import { useNow } from "@/hooks/useNow";
 import { RitualWalletPanel } from "@/components/RitualWalletPanel";
 import { Card, CardHeader, CardBody, Button, TxStatus, Notice, Spinner } from "@/components/ui";
 
@@ -34,11 +36,14 @@ export function JudgeAll({
   // Preflight the *connected* wallet's RitualWallet funding (not the bounty
   // contract) — judgeAll spends prepaid+locked RITUAL via the LLM precompile.
   const walletStatus = useRitualWalletStatus(address);
+  const now = useNow();
 
   const count = Number(bounty.submissionCount);
 
-  // Gate per spec: owner only, has submissions, not yet judged.
-  if (!isOwner || bounty.judged || bounty.finalized || count === 0) {
+  const revealPassed = normalizeTs(bounty.revealDeadline) <= now / 1000;
+
+  // Gate per spec: owner only, has submissions, not yet judged, reveal phase ended.
+  if (!isOwner || bounty.judged || bounty.finalized || count === 0 || !revealPassed) {
     return null;
   }
 
@@ -50,13 +55,15 @@ export function JudgeAll({
       // 1–2. Load every submission for this bounty.
       const submissions: JudgeSubmission[] = [];
       for (let i = 0; i < count; i++) {
-        const [submitter, answer] = await publicClient.readContract({
+        const [submitter, commitment, answer, revealed] = await publicClient.readContract({
           address: contractAddress,
           abi: aiJudgeAbi,
           functionName: "getSubmission",
           args: [bountyId, BigInt(i)],
         });
-        submissions.push({ index: i, submitter, answer });
+        if (revealed) {
+          submissions.push({ index: i, submitter, answer });
+        }
       }
 
       // 3–4. Build the batch judging prompt and encode the Ritual LLM request.

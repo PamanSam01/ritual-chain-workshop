@@ -71,7 +71,9 @@ function SubmissionRow({
   });
 
   const submitter = data?.[0];
-  const answer = data?.[1];
+  const commitment = data?.[1];
+  const answer = data?.[2];
+  const revealed = data?.[3];
 
   return (
     <div
@@ -100,8 +102,12 @@ function SubmissionRow({
         </div>
       </div>
 
-      <p className="mt-2 whitespace-pre-wrap break-words text-sm text-zinc-200">
-        {answer ?? (isLoading ? "" : "-")}
+      <p className={`mt-2 whitespace-pre-wrap break-words text-sm ${revealed ? "text-zinc-200" : "text-zinc-500 font-mono"}`}>
+        {isLoading 
+          ? "loading…" 
+          : revealed 
+            ? answer 
+            : `🔒 Hidden Commitment: ${commitment}`}
       </p>
 
       {ranking?.reason ? (

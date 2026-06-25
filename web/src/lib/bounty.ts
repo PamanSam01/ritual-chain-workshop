@@ -6,7 +6,8 @@ export type Bounty = {
   title: string;
   rubric: string;
   reward: bigint;
-  deadline: bigint;
+  submissionDeadline: bigint;
+  revealDeadline: bigint;
   judged: boolean;
   finalized: boolean;
   submissionCount: bigint;
@@ -22,6 +23,7 @@ export function parseBounty(
     string,
     bigint,
     bigint,
+    bigint,
     boolean,
     boolean,
     bigint,
@@ -34,7 +36,8 @@ export function parseBounty(
     title,
     rubric,
     reward,
-    deadline,
+    submissionDeadline,
+    revealDeadline,
     judged,
     finalized,
     submissionCount,
@@ -46,7 +49,8 @@ export function parseBounty(
     title,
     rubric,
     reward,
-    deadline,
+    submissionDeadline,
+    revealDeadline,
     judged,
     finalized,
     submissionCount,
@@ -55,26 +59,39 @@ export function parseBounty(
   };
 }
 
-export type BountyStatus = "open" | "ready" | "judged" | "finalized";
+/** Normalize timestamp to seconds. Ritual testnet returns block.timestamp in ms, so we handle both cases. */
+export function normalizeTs(ts: bigint | number): number {
+  const num = Number(ts);
+  return num > 1e11 ? Math.floor(num / 1000) : num;
+}
+
+export type BountyStatus = "open" | "reveal" | "ready" | "judged" | "finalized";
 
 export function getBountyStatus(b: Bounty, nowSeconds = Date.now() / 1000): BountyStatus {
   if (b.finalized) return "finalized";
   if (b.judged) return "judged";
-  const deadlinePassed = Number(b.deadline) <= nowSeconds;
-  return deadlinePassed ? "ready" : "open";
+  if (normalizeTs(b.submissionDeadline) >= nowSeconds) return "open";
+  if (normalizeTs(b.revealDeadline) >= nowSeconds) return "reveal";
+  return "ready";
 }
 
 export const STATUS_META: Record<
   BountyStatus,
   { label: string; tone: "green" | "amber" | "indigo" | "zinc" }
 > = {
-  open: { label: "Open", tone: "green" },
+  open: { label: "Open for Commits", tone: "green" },
+  reveal: { label: "Reveal Phase", tone: "amber" },
   ready: { label: "Ready for judging", tone: "amber" },
   judged: { label: "Judged", tone: "indigo" },
   finalized: { label: "Finalized", tone: "zinc" },
 };
 
-/** Can a participant still submit an answer? */
-export function canSubmit(b: Bounty, nowSeconds = Date.now() / 1000): boolean {
-  return !b.judged && !b.finalized && Number(b.deadline) > nowSeconds;
+/** Can a participant still submit a commitment? */
+export function canCommit(b: Bounty, nowSeconds = Date.now() / 1000): boolean {
+  return !b.judged && !b.finalized && normalizeTs(b.submissionDeadline) > nowSeconds;
+}
+
+/** Can a participant reveal their answer? */
+export function canReveal(b: Bounty, nowSeconds = Date.now() / 1000): boolean {
+  return !b.judged && !b.finalized && normalizeTs(b.submissionDeadline) <= nowSeconds && normalizeTs(b.revealDeadline) > nowSeconds;
 }

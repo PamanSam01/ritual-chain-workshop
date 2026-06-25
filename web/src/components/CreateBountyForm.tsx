@@ -35,7 +35,13 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
   const { isConnected } = useAccount();
   const [title, setTitle] = useState("");
   const [rubric, setRubric] = useState("");
-  const [deadline, setDeadline] = useState(defaultDeadline());
+  const [submissionDeadline, setSubmissionDeadline] = useState(defaultDeadline());
+  // Default reveal deadline = 2 hours from now
+  const [revealDeadline, setRevealDeadline] = useState(() => {
+    const d = new Date(Date.now() + 120 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const [reward, setReward] = useState("");
   const [createdId, setCreatedId] = useState<bigint | null>(null);
 
@@ -61,9 +67,12 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
   const validation = useMemo(() => {
     if (!title.trim()) return "Title is required.";
     if (!rubric.trim()) return "Rubric is required.";
-    if (!deadline) return "Pick a deadline.";
-    const ts = new Date(deadline).getTime();
-    if (!Number.isFinite(ts)) return "Invalid deadline.";
+    if (!submissionDeadline) return "Pick a submission deadline.";
+    if (!revealDeadline) return "Pick a reveal deadline.";
+    const subTs = new Date(submissionDeadline).getTime();
+    const revTs = new Date(revealDeadline).getTime();
+    if (!Number.isFinite(subTs) || !Number.isFinite(revTs)) return "Invalid deadline.";
+    if (subTs >= revTs) return "Reveal deadline must be after submission deadline.";
     if (reward !== "") {
       try {
         parseEther(reward);
@@ -72,31 +81,33 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
       }
     }
     return null;
-  }, [title, rubric, deadline, reward]);
+  }, [title, rubric, submissionDeadline, revealDeadline, reward]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (validation || !contractAddress) return;
 
-    const deadlineMs = new Date(deadline).getTime();
-    if (deadlineMs <= Date.now()) {
-      // Clock read belongs in the event handler, not render.
-      window.alert("Deadline must be in the future.");
+    const submissionMs = new Date(submissionDeadline).getTime();
+    if (submissionMs <= Date.now()) {
+      window.alert("Submission deadline must be in the future.");
       return;
     }
 
-    const deadlineTs = BigInt(Math.floor(deadlineMs / 1000));
-    console.log("Creating bounty with", { title, rubric, deadlineTs, reward });
+    const subTs = BigInt(Math.floor(submissionMs));
+    const revTs = BigInt(Math.floor(new Date(revealDeadline).getTime()));
     const value = reward.trim() === "" ? 0n : parseEther(reward.trim());
     setCreatedId(null);
 
     try {
+
+
       await tx.run({
         address: contractAddress,
         abi: aiJudgeAbi,
         functionName: "createBounty",
-        args: [title.trim(), rubric.trim(), deadlineTs],
+        args: [title.trim(), rubric.trim(), subTs, revTs],
         value,
+        gas: 3000000n,
         chainId: ritualChain.id,
       });
     } catch {
@@ -138,13 +149,22 @@ export function CreateBountyForm({ onCreated }: { onCreated?: (bountyId: bigint)
           </Field>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Deadline">
+            <Field label="Submission Deadline" hint="When the commit phase ends.">
               <Input
                 type="datetime-local"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
+                value={submissionDeadline}
+                onChange={(e) => setSubmissionDeadline(e.target.value)}
               />
             </Field>
+            <Field label="Reveal Deadline" hint="When the reveal phase ends.">
+              <Input
+                type="datetime-local"
+                value={revealDeadline}
+                onChange={(e) => setRevealDeadline(e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Reward (RITUAL)" hint="Locked in the contract on create.">
               <Input
                 type="number"
