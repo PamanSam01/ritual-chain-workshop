@@ -1,86 +1,175 @@
-# 🛡️ Privacy-Preserving AI Bounty Judge
+# Privacy-Preserving AI Bounty Judge
 
-Welcome to the **Privacy-Preserving AI Bounty Judge** project, developed as a submission for the **Ritual Academy**. This project enhances the standard AI bounty architecture by introducing a robust Commit-Reveal cryptographic scheme, ensuring absolute fairness in on-chain competitive intelligence tasks.
+> **A decentralized, sybil-resistant bounty evaluation platform powered by Ritual's AI Coprocessors and secured by a Commit-Reveal architecture.**
+
+![Solidity](https://img.shields.io/badge/Solidity-%23363636.svg?style=for-the-badge&logo=solidity&logoColor=white) ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white) ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![Ritual Chain](https://img.shields.io/badge/Ritual%20Chain-Indigo?style=for-the-badge) ![Commit-Reveal](https://img.shields.io/badge/Commit--Reveal-Green?style=for-the-badge) ![AI Precompile](https://img.shields.io/badge/AI%20Precompile-Amber?style=for-the-badge)
 
 ---
 
-## 1. Overview
-The **Privacy-Preserving AI Bounty Judge** (`AIJudge.sol`) is an upgraded smart contract built to seamlessly integrate with the Ritual Network's LLM Precompile. It allows bounty creators to post natural language rubrics and developers to submit AI-evaluated answers. This upgraded version guarantees submission privacy during the active contest phase, preventing intellectual property theft and "lazy-copying" behaviors often seen in transparent ledgers.
+## 📖 Project Overview
 
-## 2. Problem Statement
-In traditional blockchain-based bounty systems, all data is inherently public. When participants submit their solutions, their answers are instantly visible on block explorers. In competitive environments—especially those relying on nuanced LLM prompts or creative answers—this transparency creates a toxic race condition. 
+The **Privacy-Preserving AI Bounty Judge** is a decentralized application designed to facilitate fair, competitive technical bounties. It leverages the **Ritual Chain** for on-chain Large Language Model (LLM) inference and implements a **Commit-Reveal** cryptographic scheme to guarantee that participants cannot plagiarize each other's submissions before the judging phase begins.
 
-## 3. Why Public Submissions Are Unfair
-- **Frontrunning & Plagiarism:** Latecomers can simply copy the best submissions from early participants.
-- **Deterrence of Effort:** Genuine developers are disincentivized from putting in high effort if their work can be easily stolen.
-- **Suboptimal Results:** The bounty creator ultimately receives homogeneous, slightly varied copies of the first good submission, rather than truly diverse, independent ideas.
+---
 
-## 4. Commit-Reveal Solution
-To solve the transparency problem without sacrificing decentralization, this contract implements a **Commit-Reveal Scheme**. 
-Instead of posting their plain-text answers on-chain, users first submit a cryptographic hash of their answer along with a secret salt. Once the submission deadline passes, all participants enter the "Reveal Phase" where they broadcast their plain-text answers. If the hash matches their previous commitment, the answer is accepted for judging.
+## 🚫 The Problem
 
-## 5. Bounty Lifecycle
-The life of a bounty flows through strict chronological phases:
-1. **Creation:** The owner funds the bounty and sets distinct `submissionDeadline` and `revealDeadline` timestamps.
-2. **Commit Phase:** Participants submit hashes of their work using `submitCommitment()`.
-3. **Reveal Phase:** After the submission deadline, participants broadcast their plaintext answers and salts using `revealAnswer()`.
-4. **Judging Phase:** After the reveal deadline, the owner invokes `judgeAll()`. Only successfully revealed submissions are sent to the Ritual LLM precompile.
-5. **Finalization Phase:** The owner calls `finalizeWinner()`. The smart contract enforces that only a revealed submission can win, automatically distributing the locked reward.
+In a standard smart contract architecture, all transaction data is public. If a bounty platform allows users to submit answers directly to the blockchain, early submissions become visible to everyone. Malicious actors can easily scrape the mempool or block explorer, copy the best answers, and submit them as their own.
 
-*(Edge Case Mitigation: If no users reveal their commitments, the owner can invoke `cancelBounty()` to retrieve their locked funds.)*
-
-## 6. Smart Contract Architecture
-### Core Methods
-- `createBounty(title, rubric, submissionDeadline, revealDeadline)`: Initializes the state machine.
-- `submitCommitment(bountyId, commitment)`: Records the participant's hash.
-- `revealAnswer(bountyId, answer, salt)`: Verifies and exposes the participant's plaintext.
-- `judgeAll(bountyId, llmInput)`: Passes the revealed payload to the Ritual LLM Precompile.
-- `finalizeWinner(bountyId, winnerIndex)`: Distributes the reward to the chosen victor.
-- `cancelBounty(bountyId)`: Refunds the creator in the event of a zero-reveal failure.
-
-### Core Mappings
-We ensure gas-efficient lookups using nested mappings to enforce uniqueness and prevent iteration costs:
-- `mapping(uint256 => mapping(address => bool)) public hasCommitted;`
-- `mapping(uint256 => mapping(address => uint256)) public userSubmissionIndex;`
-
-## 7. Commitment Formula
-To guarantee cryptographically secure commitments, this protocol utilizes the exact formula mandated by the assignment specification:
-```solidity
-bytes32 commitment = keccak256(abi.encodePacked(answer, salt, msg.sender, bountyId));
+```text
+[Jez] ---> Submits brilliant answer (Plaintext) ---> [Blockchain]
+                                                             |
+[Eve]   <--- Reads Jez's answer from block data <----------+
+  |
+  +--------> Submits identical answer as her own ----> [Blockchain]
 ```
-By including `msg.sender` and `bountyId` in the hash payload, the protocol is immune to replay attacks across different bounties or different wallet addresses.
 
-## 8. Security Considerations
-- **Strict Phase Bounds:** Time-locks prevent revealing during the commit phase, and committing during the reveal phase.
-- **Unrevealed Exclusion:** Unrevealed submissions are strictly ignored by the judging process, and `finalizeWinner` forcefully rejects unrevealed winner indices.
-- **Double-Commit Prevention:** The `hasCommitted` mapping ensures one entry per wallet.
+This fundamentally breaks the competitive integrity of technical bounties.
 
-## 9. Known Limitations
-- **Griefing Vector (DoS):** Due to the `MAX_SUBMISSIONS` cap (10), an attacker could fill the bounty slots with dummy hashes and never reveal them. This locks out legitimate participants.
-- **On-chain Metadata:** The submission size is bounded to `2000` bytes to prevent block-gas limit exhaustion.
+---
 
-## 10. Future Improvements
-- **Staking Mechanism:** Requiring a small ETH stake during the `submitCommitment` phase—which is slashed if they fail to reveal—would completely neutralize the aforementioned griefing vector.
-- **Dynamic Slot Allocation:** Applying the `MAX_SUBMISSIONS` limit only to *revealed* submissions rather than commitments.
+## 💡 My Solution
 
-## 11. Ritual-Native Private Judging Design
-Currently, the protocol relies on the `llmInput` being constructed off-chain and passed into `judgeAll()` by the owner. While the smart contract ensures only revealed submissions can win, the owner theoretically holds leverage over the LLM's prompt.
+To eliminate plagiarism without introducing the gas overhead of on-chain decryption or centralized key management, I implemented a **Commit-Reveal Architecture**.
 
-In a fully mature Ritual-Native architecture, the LLM prompt and payload concatenation should happen within a **Trusted Execution Environment (TEE)** or strictly enforced via the smart contract itself, ensuring cryptographically verifiable LLM inputs that perfectly map the `bounty.submissions` array without human intervention.
+```text
+PHASE 1: COMMIT
+[Jez] ---> Hashes(Answer + Salt) ---> Submits Hash (Commitment) ---> [Blockchain]
+[Eve]   ---> Sees Hash (Cannot read answer)
 
-## 12. Deployment Instructions
-To compile and deploy this contract to the Ritual Testnet:
+PHASE 2: REVEAL
+[Jez] ---> Submits Plaintext Answer + Salt ---> [Blockchain verifies Hash]
+```
 
+By enforcing a dual-deadline lifecycle, submissions remain entirely private until all participants are locked in. Only then are the answers revealed and judged by the Ritual AI Coprocessor.
+
+---
+
+## 🏗️ Architecture
+
+The system consists of three integrated layers:
+
+1. **Smart Contract Layer (`AIJudge.sol`)**: A Solidity contract deployed on Ritual Chain that orchestrates the bounty lifecycle, escrow, and commit-reveal cryptographic verification.
+2. **Frontend Layer (Next.js)**: A React-based web application that handles client-side Keccak256 hashing, persistent `localStorage` salt management, and interacting with the Ritual network via Wagmi/Viem.
+3. **Ritual AI Layer**: An integrated LLM precompile (`0x...0802`) that ingests all revealed submissions simultaneously and ranks them based on the creator's rubric.
+
+---
+
+## ⚙️ Smart Contract Flow
+
+1. **Create Bounty**: The creator funds the contract with RITUAL tokens, defines the scoring rubric, and sets two strict deadlines: `submissionDeadline` and `revealDeadline`.
+2. **Commit Submission**: Participants compute a local hash (`keccak256(answer + salt + address + bountyId)`) and submit only this 32-byte hash.
+3. **Reveal Submission**: After the submission window closes, participants submit their raw text and salt. The contract hashes them on-chain and verifies the commitment.
+4. **AI Judging**: Once the reveal window closes, the creator invokes `judgeAll()`. The contract calls the Ritual AI precompile to evaluate all valid, revealed submissions.
+5. **Finalize Winner**: The creator reviews the AI's advisory output and triggers `finalizeWinner()`, releasing the locked tokens to the victor.
+
+---
+
+## 🛡️ Security Design
+
+| Feature | Implementation Mechanism |
+| :--- | :--- |
+| **Commit-Reveal** | Answers remain private until the submission deadline passes. |
+| **Replay Protection** | `keccak256` payload includes `msg.sender` and `bountyId` to prevent copying hashes. |
+| **Front-running Protection** | Salts are 32-byte cryptographically secure random values generated via Web Crypto API. |
+| **Reentrancy Protection** | Rewards are paid via CEI (Checks-Effects-Interactions) pattern after state finalization. |
+| **Winner Validation** | Contract strictly requires `bounty.submissions[winnerIndex].revealed == true`. |
+| **Duplicate Commit Protection** | Enforced via `mapping(uint256 => mapping(address => bool)) hasCommitted`. |
+
+---
+
+## 🖥️ Frontend Synchronization Work
+
+Upgrading the starter frontend to support the advanced Commit-Reveal contract required significant re-engineering. I personally implemented:
+
+- **Dual Deadlines**: Migrated from a single timeline to a phased UI managing both `submissionDeadline` and `revealDeadline`.
+- **Client-Side Cryptography**: Integrated `viem` (`keccak256`, `encodePacked`) and `window.crypto.getRandomValues` to generate secure, verifiable hashes locally.
+- **State Persistence**: Implemented a robust `localStorage` layer (`ritual_commit_{bountyId}_{address}`) to safely store the user's plaintext answer and salt between the commit and reveal phases.
+- **Workflow Gating**: Built strict rendering logic (`canCommit`, `canReveal`) to prevent UI components from displaying out of phase or submitting invalid transactions.
+
+---
+
+## ✅ Real Deployment Validation
+
+This implementation is not theoretical. It has been deployed and fully validated on the live **Ritual Chain Testnet**.
+
+**Deployed Contract Address**:  
+[`0x484d7Ca691826B68E3085883F91Ea254A5866461`](https://explorer.ritualfoundation.org)
+
+**End-to-End Test Execution**:
+- [x] **Create Bounty**: Successfully deployed a 0.1 RITUAL bounty with strict dual deadlines.
+- [x] **Commit**: Locally hashed an answer and submitted the commitment transaction.
+- [x] **Reveal**: Successfully verified the commitment on-chain using the stored `localStorage` salt.
+- [x] **Judge**: Triggered the AI Precompile, successfully processing the LLM advisory output.
+- [x] **Finalize Winner**: Disbursed the 0.1 RITUAL reward to the validated submitter.
+
+---
+
+## 🧠 Lessons Learned
+
+During development, several complex architectural hurdles were overcome:
+
+- **Ritual Timestamp Handling**: Standard EVM networks measure `block.timestamp` in seconds. Ritual Testnet measures it in **milliseconds**. This caused immediate reverts (`invalid submission deadline`). I built a dynamic `normalizeTs` utility to gracefully handle cross-network timestamp precision variations.
+- **RPC Gas Estimation Rejections**: MetaMask frequently attempts to simulate transactions with a default gas limit of `70,000,000`. On the Ritual Testnet, this exceeded the maximum block gas limit, causing `eth_estimateGas` to be rejected outright. I resolved this by manually injecting a static `gas: 3000000n` override into the Wagmi transaction payload.
+- **Commit-Reveal UX Tradeoffs**: Because the raw answer is never sent to a backend, losing the browser cache guarantees the loss of the submission. Communicating this risk to the user via clear UI alerts became a critical design requirement.
+
+---
+
+## ⚠️ Known Limitations
+
+- **`localStorage` Dependency**: Users who clear their browser data or switch devices between the commit and reveal phases will be unable to decrypt their submissions.
+- **`MAX_SUBMISSIONS` Griefing Vector**: To prevent out-of-gas errors during the AI array iteration, submissions are capped at 10. A malicious actor could spam 10 invalid commitments to lock out legitimate developers.
+- **Owner-Controlled Prompts**: The `judgeAll` function relies on the frontend passing the `llmInput` payload. While the contract ensures only revealed submissions are evaluated, a malicious bounty creator could technically alter the prompt wrapper sent to the LLM.
+
+---
+
+## 🚀 Future Improvements
+
+- **Staking Mechanism**: Requiring a small RITUAL stake to commit an answer would drastically reduce spam and mitigate the `MAX_SUBMISSIONS` griefing vector.
+- **TEE-Based Autonomous Judging**: Leveraging Trusted Execution Environments (TEEs) could allow the contract to automatically trigger `judgeAll` at the exact block the reveal deadline passes, removing reliance on the owner.
+- **Automated Reveal Reminders**: Integrating an off-chain indexer to email or notify users when their specific reveal window opens.
+- **Decentralized Prompt Generation**: Generating the LLM prompt wrapper strictly on-chain or within a coprocessor to prevent owner manipulation.
+
+---
+
+## 📂 Repository Structure
+
+```text
+├── hardhat/                    # Smart Contract Environment
+│   ├── contracts/
+│   │   ├── AIJudge.sol         # Commit-Reveal Contract
+│   │   └── utils/              # Precompile Interfaces
+│   └── hardhat.config.ts       # Ritual Network Configuration
+│
+└── web/                        # Next.js Frontend
+    ├── src/
+    │   ├── abi/                # Contract Interfaces
+    │   ├── components/         # React UI & Transaction Handlers
+    │   ├── hooks/              # Wagmi & Custom React Hooks
+    │   └── lib/                # Hashing, Timestamps & Ritual LLM Logic
+    └── next.config.ts          # Application Configuration
+```
+
+---
+
+## 🏎️ Quick Start
+
+### 1. Smart Contract (Hardhat)
 ```bash
-# 1. Install dependencies
-npm install
-
-# 2. Compile the updated smart contracts
+cd hardhat
+pnpm install
 npx hardhat compile
-
-# 3. Set your deployer private key securely
-npx hardhat vars set DEPLOYER_PRIVATE_KEY
-
-# 4. Deploy using Hardhat Ignition to the Ritual network
-npx hardhat ignition deploy ./ignition/modules/AIJudge.ts --network ritual
+npx hardhat run scripts/deploy.ts --network ritual
 ```
+
+### 2. Frontend (Next.js)
+```bash
+cd web
+pnpm install
+# Set NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local
+pnpm run dev
+```
+
+---
+
+*Built for the future of privacy-preserving, AI-powered applications on the Ritual Chain.*
